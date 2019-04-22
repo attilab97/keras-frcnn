@@ -6,7 +6,9 @@ import time
 import numpy as np
 from optparse import OptionParser
 import pickle
+import os
 
+import tensorflow as tf
 from keras import backend as K
 from keras.optimizers import Adam, SGD, RMSprop
 from keras.layers import Input
@@ -15,6 +17,18 @@ from keras_frcnn import config, data_generators
 from keras_frcnn import losses as losses
 import keras_frcnn.roi_helpers as roi_helpers
 from keras.utils import generic_utils
+from keras.callbacks import TensorBoard
+
+
+# tensorboard
+def write_log(callback, names, logs, batch_no):
+    for name, value in zip(names, logs):
+        summary = tf.Summary()
+        summary_value = summary.value.add()
+        summary_value.simple_value = value
+        summary_value.tag = name
+        callback.writer.add_summary(summary, batch_no)
+        callback.writer.flush()
 
 sys.setrecursionlimit(40000)
 
@@ -35,6 +49,8 @@ parser.add_option("--config_filename", dest="config_filename", help=
 				default="config.pickle")
 parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='./model_frcnn.hdf5')
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.")
+parser.add_option("--log_path", dest="log_path", help="Path of the logs.", default='./logs')
+
 
 (options, args) = parser.parse_args()
 
@@ -67,7 +83,7 @@ elif options.network == 'resnet50':
 else:
 	print('Not a valid model')
 	raise ValueError
-
+print ('Using ' + C.network + ' network')
 
 # check if weight path was passed via command line
 if options.input_weight_path:
@@ -76,8 +92,10 @@ else:
 	# set the path to weights based on backend and model
 	C.base_net_weights = nn.get_weight_path()
 
+# parser
 all_imgs, classes_count, class_mapping = get_data(options.train_path)
 
+# bg
 if 'bg' not in classes_count:
 	classes_count['bg'] = 0
 	class_mapping['bg'] = len(class_mapping)
@@ -115,6 +133,7 @@ if K.image_dim_ordering() == 'th':
 else:
 	input_shape_img = (None, None, 3)
 
+# input placeholder 
 img_input = Input(shape=input_shape_img)
 roi_input = Input(shape=(None, 4))
 
@@ -122,9 +141,11 @@ roi_input = Input(shape=(None, 4))
 shared_layers = nn.nn_base(img_input, trainable=True)
 
 # define the RPN, built on the base layers
+# RPN 
 num_anchors = len(C.anchor_box_scales) * len(C.anchor_box_ratios)
 rpn = nn.rpn(shared_layers, num_anchors)
 
+# detection network 
 classifier = nn.classifier(shared_layers, roi_input, C.num_rois, nb_classes=len(classes_count), trainable=True)
 
 model_rpn = Model(img_input, rpn[:2])
@@ -134,6 +155,9 @@ model_classifier = Model([img_input, roi_input], classifier)
 model_all = Model([img_input, roi_input], rpn[:2] + classifier)
 
 try:
+    # load_weights by name
+    # some keras application model does not containing name
+    # for this kinds of model, we need to re-construct model with naming
 	print('loading weights from {}'.format(C.base_net_weights))
 	model_rpn.load_weights(C.base_net_weights, by_name=True)
 	model_classifier.load_weights(C.base_net_weights, by_name=True)
@@ -146,6 +170,15 @@ optimizer_classifier = Adam(lr=1e-5)
 model_rpn.compile(optimizer=optimizer, loss=[losses.rpn_loss_cls(num_anchors), losses.rpn_loss_regr(num_anchors)])
 model_classifier.compile(optimizer=optimizer_classifier, loss=[losses.class_loss_cls, losses.class_loss_regr(len(classes_count)-1)], metrics={'dense_class_{}'.format(len(classes_count)): 'accuracy'})
 model_all.compile(optimizer='sgd', loss='mae')
+
+# Tensorboard log
+log_path = options.log_path
+if not os.path.isdir(log_path):
+    os.mkdir(log_path)
+
+# Tensorboard log
+callback = TensorBoard(log_path)
+callback.set_model(model_all)
 
 epoch_length = 1000
 num_epochs = int(options.num_epochs)
@@ -170,6 +203,7 @@ for epoch_num in range(num_epochs):
 
 	while True:
 		try:
+        # mean overlapping bboxes 
 
 			if len(rpn_accuracy_rpn_monitor) == epoch_length and C.verbose:
 				mean_overlapping_bboxes = float(sum(rpn_accuracy_rpn_monitor))/len(rpn_accuracy_rpn_monitor)
@@ -177,7 +211,7 @@ for epoch_num in range(num_epochs):
 				print('Average number of overlapping bounding boxes from RPN = {} for {} previous iterations'.format(mean_overlapping_bboxes, epoch_length))
 				if mean_overlapping_bboxes == 0:
 					print('RPN is not producing bounding boxes that overlap the ground truth boxes. Check RPN settings or keep training.')
-
+        # data generator X, Y, image 
 			X, Y, img_data = next(data_gen_train)
 
 			loss_rpn = model_rpn.train_on_batch(X, Y)
@@ -192,7 +226,8 @@ for epoch_num in range(num_epochs):
 				rpn_accuracy_rpn_monitor.append(0)
 				rpn_accuracy_for_epoch.append(0)
 				continue
-
+	
+       			 # sampling positive/negative samples
 			neg_samples = np.where(Y1[0, :, -1] == 1)
 			pos_samples = np.where(Y1[0, :, -1] == 0)
 
@@ -265,14 +300,18 @@ for epoch_num in range(num_epochs):
 				curr_loss = loss_rpn_cls + loss_rpn_regr + loss_class_cls + loss_class_regr
 				iter_num = 0
 				start_time = time.time()
-
-				if curr_loss < best_loss:
-					if C.verbose:
-						print('Total loss decreased from {} to {}, saving weights'.format(best_loss,curr_loss))
-					best_loss = curr_loss
-					model_all.save_weights(C.model_path)
-
-				break
+			write_log(callback,
+                ['Elapsed_time', 'mean_overlapping_bboxes', 'mean_rpn_cls_loss', 'mean_rpn_reg_loss',
+                'mean_detection_cls_loss', 'mean_detection_reg_loss', 'mean_detection_acc', 'total_loss'],
+                [time.time() - start_time, mean_overlapping_bboxes, loss_rpn_cls, loss_rpn_regr,
+                loss_class_cls, loss_class_regr, class_acc, curr_loss],
+                epoch_num)
+			if curr_loss < best_loss:
+				if C.verbose:
+					print('Total loss decreased from {} to {}, saving weights'.format(best_loss,curr_loss))
+				best_loss = curr_loss
+				model_all.save_weights(C.model_path)
+			break
 
 		except Exception as e:
 			print('Exception: {}'.format(e))
