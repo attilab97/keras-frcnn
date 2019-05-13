@@ -15,7 +15,10 @@ from keras_frcnn import config, data_generators
 from keras_frcnn import losses as losses
 import keras_frcnn.roi_helpers as roi_helpers
 from keras.utils import generic_utils
+import logging
 
+logging.basicConfig(filename = 'logs.log', level = logging.INFO)
+logger = logging.getLogger('keras_frcnn.train_frcnn')
 sys.setrecursionlimit(40000)
 
 parser = OptionParser()
@@ -152,7 +155,8 @@ optimizer = Adam(lr=1e-5)
 optimizer_classifier = Adam(lr=1e-5)
 model_rpn.compile(optimizer=optimizer, loss=[losses.rpn_loss_cls(num_anchors), losses.rpn_loss_regr(num_anchors)])
 model_classifier.compile(optimizer=optimizer_classifier, loss=[losses.class_loss_cls, losses.class_loss_regr(len(classes_count)-1)], metrics={'dense_class_{}'.format(len(classes_count)): 'accuracy'})
-model_all.compile(optimizer='sgd', loss='mae')
+#mae = mean absolute error
+model_all.compile(optimizer='sgd', loss='mae', metrics=['accuracy'])
 
 epoch_length = 1000
 num_epochs = int(options.num_epochs)
@@ -171,10 +175,9 @@ print('Starting training')
 vis = True
 
 for epoch_num in range(num_epochs):
-
 	progbar = generic_utils.Progbar(epoch_length)
 	print('Epoch {}/{}'.format(epoch_num + 1, num_epochs))
-
+	logging.info('Epochs {}/{}'.format(epoch_num + 1, num_epochs))
 	while True:
 		try:
         # mean overlapping bboxes 
@@ -182,9 +185,9 @@ for epoch_num in range(num_epochs):
 			if len(rpn_accuracy_rpn_monitor) == epoch_length and C.verbose:
 				mean_overlapping_bboxes = float(sum(rpn_accuracy_rpn_monitor))/len(rpn_accuracy_rpn_monitor)
 				rpn_accuracy_rpn_monitor = []
-				print('Average number of overlapping bounding boxes from RPN = {} for {} previous iterations'.format(mean_overlapping_bboxes, epoch_length))
+				logging.info('Average number of overlapping bounding boxes from RPN = {} for {} previous iterations'.format(mean_overlapping_bboxes, epoch_length))
 				if mean_overlapping_bboxes == 0:
-					print('RPN is not producing bounding boxes that overlap the ground truth boxes. Check RPN settings or keep training.')
+					logging.info('RPN is not producing bounding boxes that overlap the ground truth boxes. Check RPN settings or keep training.')
 
 			X, Y, img_data = next(data_gen_train)
 
@@ -263,13 +266,13 @@ for epoch_num in range(num_epochs):
 				rpn_accuracy_for_epoch = []
 
 				if C.verbose:
-					print('Mean number of bounding boxes from RPN overlapping ground truth boxes: {}'.format(mean_overlapping_bboxes))
-					print('Classifier accuracy for bounding boxes from RPN: {}'.format(class_acc))
-					print('Loss RPN classifier: {}'.format(loss_rpn_cls))
-					print('Loss RPN regression: {}'.format(loss_rpn_regr))
-					print('Loss Detector classifier: {}'.format(loss_class_cls))
-					print('Loss Detector regression: {}'.format(loss_class_regr))
-					print('Elapsed time: {}'.format(time.time() - start_time))
+					logging.info('Mean number of bounding boxes from RPN overlapping ground truth boxes: {}'.format(mean_overlapping_bboxes))
+					logging.info('Classifier accuracy for bounding boxes from RPN: {}'.format(class_acc))
+					logging.info('Loss RPN classifier: {}'.format(loss_rpn_cls))
+					logging.info('Loss RPN regression: {}'.format(loss_rpn_regr))
+					logging.info('Loss Detector classifier: {}'.format(loss_class_cls))
+					logging.info('Loss Detector regression: {}'.format(loss_class_regr))
+					logging.info('Elapsed time: {}'.format(time.time() - start_time))
 
 				curr_loss = loss_rpn_cls + loss_rpn_regr + loss_class_cls + loss_class_regr
 				iter_num = 0
@@ -277,7 +280,7 @@ for epoch_num in range(num_epochs):
 
 				if curr_loss < best_loss:
 					if C.verbose:
-						print('Total loss decreased from {} to {}, saving weights'.format(best_loss,curr_loss))
+						logging.info('Total loss decreased from {} to {}, saving weights'.format(best_loss,curr_loss))
 					best_loss = curr_loss
 					model_all.save_weights(C.model_path)
 
