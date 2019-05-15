@@ -33,5 +33,5 @@ rm -f Images.zip
 #in folderul Images sunt si pozele si fisierul data.txt unde sunt anotarile
 cd ./Images
 
-#antrenez reteaua, ponderile se salveaza automat cand un loss este mai mic decat unul din trecut, se salveaza peste cel de la epoca precedenta 
-python ../train_frcnn.py -o simple -p data.txt --output_weight_path '../lara_weights.h5' --num_epochs 500 --input_weight_path '../resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5'
+#antrenez reteaua, ponderile se salveaza automat cand un loss este mai mic decat unul din trecut, se salveaza peste cel de la epoca precedenta
+python ../train_frcnn.py  -p data.txt --output_weight_path '../lara_weights.h5' --num_epochs 500 --input_weight_path '../resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5'
