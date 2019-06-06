@@ -20,7 +20,7 @@ from keras_frcnn import resnet as nn
 from keras_frcnn.simple_parser import get_data
 #set the logging level
 
-logging.basicConfig(filename = 'logs.log', level = logging.INFO)
+logging.basicConfig(filename = '/content/drive/My Drive/Lara_log/logs.log', level = logging.INFO)
 logger = logging.getLogger('keras_frcnn.train_frcnn')
 sys.setrecursionlimit(40000)
 
