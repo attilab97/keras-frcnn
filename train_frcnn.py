@@ -37,11 +37,12 @@ parser.add_option("--output_weight_path", dest="output_weight_path", help="Outpu
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.")
 parser.add_option("--log_path", dest="log_path", help="Path of the logs.", default='./logs')
 
-
 (options, args) = parser.parse_args()
 
 if not options.train_path:   # if filename is not given
 	parser.error('Error: path to training data must be specified. Pass --path to command line')
+logging.basicConfig(filename = args.log_path + 'logs.log', level = logging.INFO)
+logger = logging.getLogger('keras_frcnn.train_frcnn')
 
 # pass the settings from the command line, and persist them in the config object
 C = config.Config()
