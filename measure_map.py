@@ -105,7 +105,7 @@ config_output_filename = options.config_filename
 with open(config_output_filename, 'r') as f_in:
 	C = pickle.load(f_in)
 
-# turn off any data augmentation at test time
+# nu folosim augmenatrea datelor la testare
 C.use_horizontal_flips = False
 C.use_vertical_flips = False
 C.rot_90 = False
@@ -161,10 +161,10 @@ img_input = Input(shape=input_shape_img)
 roi_input = Input(shape=(C.num_rois, 4))
 feature_map_input = Input(shape=input_shape_features)
 
-# define the base network (resnet here, can be VGG, Inception, etc)
+# definim reteaua de baza, resnet50
 shared_layers = nn.nn_base(img_input, trainable=True)
 
-# define the RPN, built on the base layers
+# definim RPN construita pe baza straturilor de baza
 num_anchors = len(C.anchor_box_scales) * len(C.anchor_box_ratios)
 rpn_layers = nn.rpn(shared_layers, num_anchors)
 
@@ -199,16 +199,16 @@ for idx, img_data in enumerate(test_imgs):
 	if K.image_dim_ordering() == 'tf':
 		X = np.transpose(X, (0, 2, 3, 1))
 
-	# get the feature maps and output from the RPN
+	# luam harta de caracteristici si output-ul de la RPN
 	[Y1, Y2, F] = model_rpn.predict(X)
 
 	R = roi_helpers.rpn_to_roi(Y1, Y2, C, K.image_dim_ordering(), overlap_thresh=0.7)
 
-	# convert from (x1,y1,x2,y2) to (x,y,w,h)
+	# convertim din coordonate (x1,y1,x2,y2) in format (x,y,w,h)
 	R[:, 2] -= R[:, 0]
 	R[:, 3] -= R[:, 1]
 
-	# apply the spatial pyramid pooling to the proposed regions
+	# aplicam pooling spatial pe regiunile propuse
 	bboxes = {}
 	probs = {}
 
@@ -218,7 +218,6 @@ for idx, img_data in enumerate(test_imgs):
 			break
 
 		if jk == R.shape[0] // C.num_rois:
-			# pad R
 			curr_shape = ROIs.shape
 			target_shape = (curr_shape[0], C.num_rois, curr_shape[2])
 			ROIs_padded = np.zeros(target_shape).astype(ROIs.dtype)

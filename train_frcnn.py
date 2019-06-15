@@ -18,7 +18,7 @@ from keras_frcnn import losses as losses
 from keras_frcnn import roi_helpers as roi_helpers
 from keras_frcnn import resnet as nn
 from keras_frcnn.simple_parser import get_data
-#set the logging level
+#setam nivelul de debug
 
 logging.basicConfig(filename = '/content/drive/My Drive/Lara_log/logs.log', level = logging.INFO)
 logger = logging.getLogger('keras_frcnn.train_frcnn')
@@ -39,15 +39,16 @@ parser.add_option("--log_path", dest="log_path", help="Path of the logs.", defau
 
 (options, args) = parser.parse_args()
 
-if not options.train_path:   # if filename is not given
+# daca nu e data calea catre datele de antrenare
+if not options.train_path:  
 	parser.error('Error: path to training data must be specified. Pass --path to command line')
 logging.basicConfig(filename = options.log_path + 'logs.log', level = logging.INFO)
 logger = logging.getLogger('keras_frcnn.train_frcnn')
 
-# pass the settings from the command line, and persist them in the config object
+# trimitem argumentele din linia de comanda mai departe pentru procesare
 C = config.Config()
 
-#image augmentation
+#augmentarea datelor
 C.use_horizontal_flips = bool(options.horizontal_flips)
 C.use_vertical_flips = bool(options.vertical_flips)
 C.rot_90 = bool(options.rot_90)
@@ -55,14 +56,14 @@ C.rot_90 = bool(options.rot_90)
 C.model_path = options.output_weight_path
 C.num_rois = int(options.num_rois)
 
-# check if weight path was passed via command line
+# verificam daca ponderile preantrenate au fost trimise prin parametru
 if options.input_weight_path:
 	C.base_net_weights = options.input_weight_path
 else:
-	# set the path to weights based on backend and model
+	# daca nu, setam calea catre ponderile retelei de baza
 	C.base_net_weights = nn.get_weight_path()
 
-# parser
+# parser-ul
 all_imgs, classes_count, class_mapping = get_data(options.train_path)
 
 # bg
@@ -98,31 +99,31 @@ print('Num val samples {}'.format(len(val_imgs)))
 data_gen_train = data_generators.get_anchor_gt(train_imgs, classes_count, C, nn.get_img_output_length, K.image_dim_ordering(), mode='train')
 data_gen_val = data_generators.get_anchor_gt(val_imgs, classes_count, C, nn.get_img_output_length,K.image_dim_ordering(), mode='val')
 
-#check img_dim_ordering field of keras backend
+# verifican campul img_dim_ordering pentru backkend-ul de keras
 if K.image_dim_ordering() == 'th':
 	input_shape_img = (3, None, None)
 else:
 	input_shape_img = (None, None, 3)
 
-# input placeholder 
+# placeholder-ul pentru input
 img_input = Input(shape=input_shape_img)
 roi_input = Input(shape=(None, 4))
 
-# define the base network (resnet here, can be VGG, Inception, etc)
+# definim reteaua de baza, resnet50
 shared_layers = nn.nn_base(img_input, trainable=True)
 
-# define the RPN, built on the base layers
+# definim RPN-ul contruit pe straturile retelei de baza
 # RPN 
 num_anchors = len(C.anchor_box_scales) * len(C.anchor_box_ratios)
 rpn = nn.rpn(shared_layers, num_anchors)
 
-# detection network 
+# reteaua de detectie, R-CNN
 classifier = nn.classifier(shared_layers, roi_input, C.num_rois, nb_classes=len(classes_count), trainable=True)
 
 model_rpn = Model(img_input, rpn[:2])
 model_classifier = Model([img_input, roi_input], classifier)
 
-# this is a model that holds both the RPN and the classifier, used to load/save weights for the models
+# modelul care contine RPN-ul si R-CNN-ul, folosit pentru a incarca si salva ponderile modelului
 model_all = Model([img_input, roi_input], rpn[:2] + classifier)
 
 try:
@@ -133,13 +134,13 @@ except:
 	print('Could not load pretrained model weights. Weights can be found in the keras application folder \
 		https://github.com/fchollet/keras/tree/master/keras/applications')
 
-#used for rpn
+#optimizatorul pentru RPN
 optimizer = Adam(lr=1e-5)
 
-#used for classifier network
+#optimizatorul folosit pentru R-CNN (pentru clasificare)
 optimizer_classifier = Adam(lr=1e-5)
 
-#compile both rpn and classifier network
+#compilam RPN-ul si R-CNN-ul
 model_rpn.compile(optimizer=optimizer, loss=[losses.rpn_loss_cls(num_anchors), losses.rpn_loss_regr(num_anchors)])
 model_classifier.compile(optimizer=optimizer_classifier, loss=[losses.class_loss_cls, losses.class_loss_regr(len(classes_count)-1)], metrics={'dense_class_{}'.format(len(classes_count)): 'accuracy'})
 
@@ -168,7 +169,6 @@ for epoch_num in range(num_epochs):
 	logging.info('Epochs {}/{}'.format(epoch_num + 1, num_epochs))
 	while True:
 		try:
-        # mean overlapping bboxes 
 
 			if len(rpn_accuracy_rpn_monitor) == epoch_length and C.verbose:
 				mean_overlapping_bboxes = float(sum(rpn_accuracy_rpn_monitor))/len(rpn_accuracy_rpn_monitor)
@@ -184,7 +184,7 @@ for epoch_num in range(num_epochs):
 			P_rpn = model_rpn.predict_on_batch(X)
 
 			R = roi_helpers.rpn_to_roi(P_rpn[0], P_rpn[1], C, K.image_dim_ordering(), use_regr=True, overlap_thresh=0.7, max_boxes=300)
-			# note: calc_iou converts from (x1,y1,x2,y2) to (x,y,w,h) format
+			# calc_iou converteste din coordonate (x1,y1,x2,y2) in format (x,y,w,h)
 			X2, Y1, Y2, IouS = roi_helpers.calc_iou(R, img_data, C, class_mapping)
 
 			if X2 is None:
@@ -192,7 +192,7 @@ for epoch_num in range(num_epochs):
 				rpn_accuracy_for_epoch.append(0)
 				continue
 	
-       			 # sampling positive/negative samples
+       			 # esantionam valori pozitive si negative
 			neg_samples = np.where(Y1[0, :, -1] == 1)
 			pos_samples = np.where(Y1[0, :, -1] == 0)
 
@@ -221,7 +221,7 @@ for epoch_num in range(num_epochs):
 
 				sel_samples = selected_pos_samples + selected_neg_samples
 			else:
-				# in the extreme case where num_rois = 1, we pick a random pos or neg sample
+				# in cazuri extreme cand avem o regiune de interes luam valori aleatoare pozitive sau negative
 				selected_pos_samples = pos_samples.tolist()
 				selected_neg_samples = neg_samples.tolist()
 				if np.random.randint(0, 2):
