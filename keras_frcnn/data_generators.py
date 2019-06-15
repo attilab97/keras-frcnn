@@ -26,7 +26,7 @@ def intersection(ai, bi):
 
 
 def iou(a, b):
-	# a and b should be (x1,y1,x2,y2)
+	# a si b trebuie sa fie (x1,y1,x2,y2)
 
 	if a[0] >= a[2] or a[1] >= a[3] or b[0] >= b[2] or b[1] >= b[3]:
 		return 0.0
@@ -52,7 +52,7 @@ def get_new_img_size(width, height, img_min_side=600):
 
 class SampleSelector:
 	def __init__(self, class_count):
-		# ignore classes that have zero samples
+		# ignoram clasele care nu au instante
 		self.classes = [b for b in class_count.keys() if class_count[b] > 0]
 		self.class_cycle = itertools.cycle(self.classes)
 		self.curr_class = next(self.class_cycle)
@@ -82,14 +82,13 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 	anchor_sizes = C.anchor_box_scales
 	anchor_ratios = C.anchor_box_ratios
 	num_anchors = len(anchor_sizes) * len(anchor_ratios)	
-
-	# calculate the output map size based on the network architecture
+	# calculam iesirea hartii pe baza arhitecturii retelei
 
 	(output_width, output_height) = img_length_calc_function(resized_width, resized_height)
 
 	n_anchratios = len(anchor_ratios)
 	
-	# initialise empty output objectives
+	# initializam iesirile cu 0
 	y_rpn_overlap = np.zeros((output_height, output_width, num_anchors))
 	y_is_box_valid = np.zeros((output_height, output_width, num_anchors))
 	y_rpn_regr = np.zeros((output_height, output_width, num_anchors * 4))
@@ -102,16 +101,15 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 	best_x_for_bbox = np.zeros((num_bboxes, 4)).astype(int)
 	best_dx_for_bbox = np.zeros((num_bboxes, 4)).astype(np.float32)
 
-	# get the GT box coordinates, and resize to account for image resizing
+	# luam coordonatele casetei originale si le facem resize pentru a compensa cu resize-ul facut imaginii
 	gta = np.zeros((num_bboxes, 4))
 	for bbox_num, bbox in enumerate(img_data['bboxes']):
-		# get the GT box coordinates, and resize to account for image resizing
 		gta[bbox_num, 0] = bbox['x1'] * (resized_width / float(width))
 		gta[bbox_num, 1] = bbox['x2'] * (resized_width / float(width))
 		gta[bbox_num, 2] = bbox['y1'] * (resized_height / float(height))
 		gta[bbox_num, 3] = bbox['y2'] * (resized_height / float(height))
 	
-	# rpn ground truth
+	# coordonatele casetei originale pentru RPN
 
 	for anchor_size_idx in range(len(anchor_sizes)):
 		for anchor_ratio_idx in range(n_anchratios):
@@ -119,36 +117,35 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 			anchor_y = anchor_sizes[anchor_size_idx] * anchor_ratios[anchor_ratio_idx][1]	
 			
 			for ix in range(output_width):					
-				# x-coordinates of the current anchor box	
+				# coordonatele x pentru ancora curenta	
 				x1_anc = downscale * (ix + 0.5) - anchor_x / 2
 				x2_anc = downscale * (ix + 0.5) + anchor_x / 2	
-				
-				# ignore boxes that go across image boundaries					
+
+				# ignoram casetele care ies inafara imaginii				
 				if x1_anc < 0 or x2_anc > resized_width:
 					continue
 					
 				for jy in range(output_height):
 
-					# y-coordinates of the current anchor box
+					# coordonatele y pentru ancora curenta	
 					y1_anc = downscale * (jy + 0.5) - anchor_y / 2
 					y2_anc = downscale * (jy + 0.5) + anchor_y / 2
 
-					# ignore boxes that go across image boundaries
+					# ignoram casetele care ies inafara imaginii
 					if y1_anc < 0 or y2_anc > resized_height:
 						continue
 
-					# bbox_type indicates whether an anchor should be a target 
+					# tipul casetei indica daca ancora ar trebui sa fie o tinta
 					bbox_type = 'neg'
 
-					# this is the best IOU for the (x,y) coord and the current anchor
-					# note that this is different from the best IOU for a GT bbox
+					# cel mai bun IoU pentru ancora curenta
 					best_iou_for_loc = 0.0
 
 					for bbox_num in range(num_bboxes):
 						
-						# get IOU of the current GT box and the current anchor box
+						# luam IoU pentru caseta si ancora curenta
 						curr_iou = iou([gta[bbox_num, 0], gta[bbox_num, 2], gta[bbox_num, 1], gta[bbox_num, 3]], [x1_anc, y1_anc, x2_anc, y2_anc])
-						# calculate the regression targets if they will be needed
+						# calculam regresiile
 						if curr_iou > best_iou_for_bbox[bbox_num] or curr_iou > C.rpn_max_overlap:
 							cx = (gta[bbox_num, 0] + gta[bbox_num, 1]) / 2.0
 							cy = (gta[bbox_num, 2] + gta[bbox_num, 3]) / 2.0
@@ -162,29 +159,28 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 						
 						if img_data['bboxes'][bbox_num]['class'] != 'bg':
 
-							# all GT boxes should be mapped to an anchor box, so we keep track of which anchor box was best
+							# urmarim care ancora s-a potrivit cel mai bine cu caseta originala
 							if curr_iou > best_iou_for_bbox[bbox_num]:
 								best_anchor_for_bbox[bbox_num] = [jy, ix, anchor_ratio_idx, anchor_size_idx]
 								best_iou_for_bbox[bbox_num] = curr_iou
 								best_x_for_bbox[bbox_num,:] = [x1_anc, x2_anc, y1_anc, y2_anc]
 								best_dx_for_bbox[bbox_num,:] = [tx, ty, tw, th]
 
-							# we set the anchor to positive if the IOU is >0.7 (it does not matter if there was another better box, it just indicates overlap)
+							# setam ancora ca si pozitiva daca IoU este > 0.7
 							if curr_iou > C.rpn_max_overlap:
 								bbox_type = 'pos'
 								num_anchors_for_bbox[bbox_num] += 1
-								# we update the regression layer target if this IOU is the best for the current (x,y) and anchor position
+								# updatam stratul de regresie daca IoU este cel mai bun pana acum pt ancora curenta
 								if curr_iou > best_iou_for_loc:
 									best_iou_for_loc = curr_iou
 									best_regr = (tx, ty, tw, th)
 
-							# if the IOU is >0.3 and <0.7, it is ambiguous and no included in the objective
+							#  daca IoU este intre 0.3-0.7 ancora e ambigua si nu se ia in considerare
 							if C.rpn_min_overlap < curr_iou < C.rpn_max_overlap:
-								# gray zone between neg and pos
 								if bbox_type != 'pos':
 									bbox_type = 'neutral'
 
-					# turn on or off outputs depending on IOUs
+					# oprim sau nu output-ul in functie de IoU
 					if bbox_type == 'neg':
 						y_is_box_valid[jy, ix, anchor_ratio_idx + n_anchratios * anchor_size_idx] = 1
 						y_rpn_overlap[jy, ix, anchor_ratio_idx + n_anchratios * anchor_size_idx] = 0
@@ -197,11 +193,11 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 						start = 4 * (anchor_ratio_idx + n_anchratios * anchor_size_idx)
 						y_rpn_regr[jy, ix, start:start+4] = best_regr
 
-	# we ensure that every bbox has at least one positive RPN region
+	# ne asiguram ca fiecare caseta are cel putin o regiune pozitiva
 
 	for idx in range(num_anchors_for_bbox.shape[0]):
 		if num_anchors_for_bbox[idx] == 0:
-			# no box with an IOU greater than zero ...
+			# nicio caseta cu IoU mai mare decat 0
 			if best_anchor_for_bbox[idx, 0] == -1:
 				continue
 			y_is_box_valid[
@@ -228,8 +224,7 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 
 	num_pos = len(pos_locs[0])
 
-	# one issue is that the RPN has many more negative than positive regions, so we turn off some of the negative
-	# regions. We also limit it to 256 regions.
+	# daca avem prea multe regiuni negative decat negative, eliminam unele negative, de asemenea limitam regiunile la 256
 	num_regions = 256
 
 	if len(pos_locs[0]) > num_regions/2:
@@ -248,9 +243,6 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 
 
 class threadsafe_iter:
-	"""Takes an iterator/generator and makes it thread-safe by
-	serializing call to the `next` method of given iterator/generator.
-	"""
 	def __init__(self, it):
 		self.it = it
 		self.lock = threading.Lock()
@@ -264,16 +256,11 @@ class threadsafe_iter:
 
 	
 def threadsafe_generator(f):
-	"""A decorator that takes a generator function and makes it thread-safe.
-	"""
 	def g(*a, **kw):
 		return threadsafe_iter(f(*a, **kw))
 	return g
 
 def get_anchor_gt(all_img_data, class_count, C, img_length_calc_function, backend, mode='train'):
-
-	# The following line is not useful with Python 3.5, it is kept for the legacy
-	# all_img_data = sorted(all_img_data)
 
 	sample_selector = SampleSelector(class_count)
 
@@ -287,7 +274,7 @@ def get_anchor_gt(all_img_data, class_count, C, img_length_calc_function, backen
 				if C.balanced_classes and sample_selector.skip_sample_for_balanced_class(img_data):
 					continue
 
-				# read in image, and optionally add augmentation
+				# citim imaginea si o augmentam
 
 				if mode == 'train':
 					img_data_aug, x_img = data_augment.augment(img_data, C, augment=True)
@@ -300,18 +287,16 @@ def get_anchor_gt(all_img_data, class_count, C, img_length_calc_function, backen
 				assert cols == width
 				assert rows == height
 
-				# get image dimensions for resizing
+				# luam dimensiunile imaginii pentru a o redimensiona
 				(resized_width, resized_height) = get_new_img_size(width, height, C.im_size)
 
-				# resize the image so that smalles side is length = 600px
+				# redimensionam imaginea astfel incat cea mai mica latura a imaginii sa aiba 1024px
 				x_img = cv2.resize(x_img, (resized_width, resized_height), interpolation=cv2.INTER_CUBIC)
 
 				try:
 					y_rpn_cls, y_rpn_regr = calc_rpn(C, img_data_aug, width, height, resized_width, resized_height, img_length_calc_function)
 				except:
 					continue
-
-				# Zero-center by mean pixel, and preprocess image
 
 				x_img = x_img[:,:, (2, 1, 0)]  # BGR -> RGB
 				x_img = x_img.astype(np.float32)

@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import copy
 
-
+# functie pentru augmentarea datelor
 def augment(img_data, config, augment=True):
 	assert 'filepath' in img_data
 	assert 'bboxes' in img_data
