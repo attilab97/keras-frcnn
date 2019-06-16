@@ -227,8 +227,6 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 			(x1, y1, x2, y2) = new_boxes[jk,:]
 
 			(real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(ratio, x1, y1, x2, y2)
-			print(real_y1)
-			print(real_y2)
 			#pentru lara
 			#cv2.rectangle(img,(real_x1, real_y1), (real_x2, real_y2), (int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])),2)
 
