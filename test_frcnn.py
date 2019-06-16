@@ -11,7 +11,6 @@ from keras import backend as K
 from keras.layers import Input
 from keras.models import Model
 from keras_frcnn import roi_helpers
-import keras_frcnn.resnet as nn
 
 sys.setrecursionlimit(40000)
 
@@ -23,11 +22,11 @@ parser.add_option("-n", "--num_rois", type="int", dest="num_rois",
 parser.add_option("--config_filename", dest="config_filename", help=
 				"Location to read the metadata related to the training (generated when training).",
 				default="config.pickle")
+parser.add_option("--network", dest="network", help="Base network to use. Supports vgg or resnet50.", default='resnet50')
 
 (options, args) = parser.parse_args()
 
-# daca nu se introduce folderul cu imagini de test
-if not options.test_path:
+if not options.test_path:   # if filename is not given
 	parser.error('Error: path to test data must be specified. Pass --path to command line')
 
 
@@ -36,7 +35,12 @@ config_output_filename = options.config_filename
 with open(config_output_filename, 'rb') as f_in:
 	C = pickle.load(f_in)
 
-# nu se foloseste augmentarea datelor la testare
+if C.network == 'resnet50':
+	import keras_frcnn.resnet as nn
+elif C.network == 'vgg':
+	import keras_frcnn.vgg as nn
+
+# turn off any data augmentation at test time
 C.use_horizontal_flips = False
 C.use_vertical_flips = False
 C.rot_90 = False
@@ -44,7 +48,7 @@ C.rot_90 = False
 img_path = options.test_path
 
 def format_img_size(img, C):
-	""" formateaza imaginea conform fisierului config """
+	""" formats the image size based on config """
 	img_min_side = float(C.im_size)
 	(height,width,_) = img.shape
 		
@@ -60,7 +64,7 @@ def format_img_size(img, C):
 	return img, ratio	
 
 def format_img_channels(img, C):
-	""" formateaza canalele imaginii conform fisierului config """
+	""" formats the image channels based on config """
 	img = img[:, :, (2, 1, 0)]
 	img = img.astype(np.float32)
 	img[:, :, 0] -= C.img_channel_mean[0]
@@ -72,12 +76,12 @@ def format_img_channels(img, C):
 	return img
 
 def format_img(img, C):
-	""" formateaza imaginea pentru predictii conform fisierului config """
+	""" formats an image for model prediction based on config """
 	img, ratio = format_img_size(img, C)
 	img = format_img_channels(img, C)
 	return img, ratio
 
-# metoda transforma coordonatele casetei de incadrare in dimensiunea originala
+# Method to transform the coordinates of the bounding box to its original size
 def get_real_coordinates(ratio, x1, y1, x2, y2):
 
 	real_x1 = int(round(x1 // ratio))
@@ -97,7 +101,10 @@ print(class_mapping)
 class_to_color = {class_mapping[v]: np.random.randint(0, 255, 3) for v in class_mapping}
 C.num_rois = int(options.num_rois)
 
-num_features = 1024
+if C.network == 'resnet50':
+	num_features = 1024
+elif C.network == 'vgg':
+	num_features = 512
 
 if K.image_dim_ordering() == 'th':
 	input_shape_img = (3, None, None)
@@ -111,10 +118,10 @@ img_input = Input(shape=input_shape_img)
 roi_input = Input(shape=(C.num_rois, 4))
 feature_map_input = Input(shape=input_shape_features)
 
-# definim reteaua de baza, resnet50
+# define the base network (resnet here, can be VGG, Inception, etc)
 shared_layers = nn.nn_base(img_input, trainable=True)
 
-# definim RPN, contruita pe straturile de baza
+# define the RPN, built on the base layers
 num_anchors = len(C.anchor_box_scales) * len(C.anchor_box_ratios)
 rpn_layers = nn.rpn(shared_layers, num_anchors)
 
@@ -136,7 +143,7 @@ all_imgs = []
 
 classes = {}
 
-bbox_threshold = 0.8
+bbox_threshold = 0.5
 
 visualise = True
 
@@ -154,17 +161,17 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 	if K.image_dim_ordering() == 'tf':
 		X = np.transpose(X, (0, 2, 3, 1))
 
-	# preluam harta de caracteristici si output-ul de la RPN
+	# get the feature maps and output from the RPN
 	[Y1, Y2, F] = model_rpn.predict(X)
 	
 
 	R = roi_helpers.rpn_to_roi(Y1, Y2, C, K.image_dim_ordering(), overlap_thresh=0.7)
 
-	# convertin din coordonate (x1,y1,x2,y2) in (x,y,w,h)
+	# convert from (x1,y1,x2,y2) to (x,y,w,h)
 	R[:, 2] -= R[:, 0]
 	R[:, 3] -= R[:, 1]
 
-	# aplicam pooling pentru regiunile propuse
+	# apply the spatial pyramid pooling to the proposed regions
 	bboxes = {}
 	probs = {}
 
@@ -174,6 +181,7 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 			break
 
 		if jk == R.shape[0]//C.num_rois:
+			#pad R
 			curr_shape = ROIs.shape
 			target_shape = (curr_shape[0],C.num_rois,curr_shape[2])
 			ROIs_padded = np.zeros(target_shape).astype(ROIs.dtype)
@@ -214,27 +222,35 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 	for key in bboxes:
 		bbox = np.array(bboxes[key])
 
-		new_boxes, new_probs = roi_helpers.non_max_suppression_fast(bbox, np.array(probs[key]), overlap_thresh=0.5)
+		new_boxes, new_probs = roi_helpers.non_max_suppression_fast(bbox, np.array(probs[key]), overlap_thresh=0.7)
 		for jk in range(new_boxes.shape[0]):
 			(x1, y1, x2, y2) = new_boxes[jk,:]
 
 			(real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(ratio, x1, y1, x2, y2)
+			print(real_y1)
+			print(real_y2)
+			#pentru lara
+			#cv2.rectangle(img,(real_x1, real_y1), (real_x2, real_y2), (int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])),2)
 
-			cv2.rectangle(img,(real_x1, real_y1), (real_x2, real_y2), (int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])),2)
+			#pentru driveu
+			cv2.rectangle(img,(real_x1, real_y2+(real_y2-real_y1)), (real_x2, real_y1+(real_y2-real_y1)), (int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])),2)
 
 			textLabel = '{}: {}'.format(key,int(100*new_probs[jk]))
 			all_dets.append((key,100*new_probs[jk]))
 
-			(retval,baseLine) = cv2.getTextSize(textLabel,cv2.FONT_HERSHEY_COMPLEX,1,1)
-			textOrg = (real_x1, real_y1-0)
+			(retval,baseLine) = cv2.getTextSize(textLabel,cv2.FONT_HERSHEY_PLAIN,1,1)
+			#pentru lara
+			#textOrg = (real_x1, real_y1-0)
+			# pentru driveu
+			textOrg = (real_x1, real_y1+(real_y2-real_y1) - 0)
 
 			cv2.rectangle(img, (textOrg[0] - 5, textOrg[1]+baseLine - 5), (textOrg[0]+retval[0] + 5, textOrg[1]-retval[1] - 5), (0, 0, 0), 2)
+			# asta pune fundal alb in spatele etichetei
 			cv2.rectangle(img, (textOrg[0] - 5,textOrg[1]+baseLine - 5), (textOrg[0]+retval[0] + 5, textOrg[1]-retval[1] - 5), (255, 255, 255), -1)
-			cv2.putText(img, textLabel, textOrg, cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
+			cv2.putText(img, textLabel, textOrg, cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
 
 	print('Elapsed time = {}'.format(time.time() - st))
 	print(all_dets)
-	img = cv2.resize(img, (960, 540))
 	cv2.imshow('img', img)
 	cv2.waitKey(0)
 	# cv2.imwrite('./results_imgs/{}.png'.format(idx),img)
