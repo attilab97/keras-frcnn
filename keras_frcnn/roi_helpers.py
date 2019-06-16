@@ -9,13 +9,13 @@ def calc_iou(R, img_data, C, class_mapping):
 
 	bboxes = img_data['bboxes']
 	(width, height) = (img_data['width'], img_data['height'])
-	# get image dimensions for resizing
+	# luam dimensiunile imaginii pentru redimensionare
 	(resized_width, resized_height) = data_generators.get_new_img_size(width, height, C.im_size)
 
 	gta = np.zeros((len(bboxes), 4))
 
 	for bbox_num, bbox in enumerate(bboxes):
-		# get the GT box coordinates, and resize to account for image resizing
+		# luam coordonatele casetei originale si le redimensionam, pentru a compensa redimensionarea imaginii originale
 		gta[bbox_num, 0] = int(round(bbox['x1'] * (resized_width / float(width))/C.rpn_stride))
 		gta[bbox_num, 1] = int(round(bbox['x2'] * (resized_width / float(width))/C.rpn_stride))
 		gta[bbox_num, 2] = int(round(bbox['y1'] * (resized_height / float(height))/C.rpn_stride))
@@ -25,7 +25,7 @@ def calc_iou(R, img_data, C, class_mapping):
 	y_class_num = []
 	y_class_regr_coords = []
 	y_class_regr_label = []
-	IoUs = [] # for debugging only
+	IoUs = [] # pentru debugging
 
 	for ix in range(R.shape[0]):
 		(x1, y1, x2, y2) = R[ix, :]
@@ -51,7 +51,6 @@ def calc_iou(R, img_data, C, class_mapping):
 			IoUs.append(best_iou)
 
 			if C.classifier_min_overlap <= best_iou < C.classifier_max_overlap:
-				# hard negative example
 				cls_name = 'bg'
 			elif C.classifier_max_overlap <= best_iou:
 				cls_name = bboxes[best_bbox]['class']
@@ -152,12 +151,12 @@ def apply_regr_np(X, T):
 		return X
 
 def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
-	# code used from here: http://www.pyimagesearch.com/2015/02/16/faster-non-maximum-suppression-python/
-	# if there are no boxes, return an empty list
+	# am folosit cod de aici: http://www.pyimagesearch.com/2015/02/16/faster-non-maximum-suppression-python/
+	# daca nu sunt casete returnam lista goala
 	if len(boxes) == 0:
 		return []
 
-	# grab the coordinates of the bounding boxes
+	# luam coordonatele casetelor de incadrare
 	x1 = boxes[:, 0]
 	y1 = boxes[:, 1]
 	x2 = boxes[:, 2]
@@ -166,30 +165,26 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
 	np.testing.assert_array_less(x1, x2)
 	np.testing.assert_array_less(y1, y2)
 
-	# if the bounding boxes integers, convert them to floats --
-	# this is important since we'll be doing a bunch of divisions
+	# daca casetele de incadrare sunt int le convertim in float pentru a putea face impartirile
 	if boxes.dtype.kind == "i":
 		boxes = boxes.astype("float")
 
-	# initialize the list of picked indexes	
+	# initializam lista cu indexi alesi	
 	pick = []
 
-	# calculate the areas
+	# calculam ariile
 	area = (x2 - x1) * (y2 - y1)
 
-	# sort the bounding boxes 
+	# sortam casetele
 	idxs = np.argsort(probs)
 
-	# keep looping while some indexes still remain in the indexes
-	# list
 	while len(idxs) > 0:
-		# grab the last index in the indexes list and add the
-		# index value to the list of picked indexes
+		# luam ultimul index din lista si adaugam valoarea lui la lista cu indexi alesi
 		last = len(idxs) - 1
 		i = idxs[last]
 		pick.append(i)
 
-		# find the intersection
+		# aflam intersectia coordonatelor
 
 		xx1_int = np.maximum(x1[i], x1[idxs[:last]])
 		yy1_int = np.maximum(y1[i], y1[idxs[:last]])
@@ -201,20 +196,20 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
 
 		area_int = ww_int * hh_int
 
-		# find the union
+		# calculam reuniunea
 		area_union = area[i] + area[idxs[:last]] - area_int
 
-		# compute the ratio of overlap
+		# calculam procentul de suprapunere
 		overlap = area_int/(area_union + 1e-6)
 
-		# delete all indexes from the index list that have
+		# stergem elementele din lista care au procentul de suprapunere mai mic decat cel calculatd
 		idxs = np.delete(idxs, np.concatenate(([last],
 			np.where(overlap > overlap_thresh)[0])))
 
 		if len(pick) >= max_boxes:
 			break
 
-	# return only the bounding boxes that were picked using the integer data type
+	# returnam casetele care au fost alese folosind tipul de date int
 	boxes = boxes[pick].astype("int")
 	probs = probs[pick]
 	return boxes, probs

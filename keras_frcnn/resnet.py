@@ -24,9 +24,7 @@ def get_weight_path():
 
 def get_img_output_length(width, height):
     def get_output_length(input_length):
-        # zero_pad
         input_length += 6
-        # apply 4 strided convolutions
         filter_sizes = [7, 3, 1, 1]
         stride = 2
         for filter_size in filter_sizes:
@@ -65,7 +63,6 @@ def identity_block(input_tensor, kernel_size, filters, stage, block, trainable=T
 
 def identity_block_td(input_tensor, kernel_size, filters, stage, block, trainable=True):
 
-    # identity block time distributed
 
     nb_filter1, nb_filter2, nb_filter3 = filters
     if K.image_dim_ordering() == 'tf':
@@ -124,7 +121,6 @@ def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2),
 
 def conv_block_td(input_tensor, kernel_size, filters, stage, block, input_shape, strides=(2, 2), trainable=True):
 
-    # conv block time distributed
 
     nb_filter1, nb_filter2, nb_filter3 = filters
     if K.image_dim_ordering() == 'tf':
@@ -155,7 +151,6 @@ def conv_block_td(input_tensor, kernel_size, filters, stage, block, input_shape,
 
 def nn_base(input_tensor=None, trainable=False):
 
-    # Determine proper input shape
     if K.image_dim_ordering() == 'th':
         input_shape = (3, None, None)
     else:
@@ -202,8 +197,6 @@ def nn_base(input_tensor=None, trainable=False):
 
 def classifier_layers(x, input_shape, trainable=False):
 
-    # compile times on theano tend to be very high, so we use smaller ROI pooling regions to workaround
-    # (hence a smaller stride in the region that follows the ROI pool)
     if K.backend() == 'tensorflow':
         x = conv_block_td(x, 3, [512, 512, 2048], stage=5, block='a', input_shape=input_shape, strides=(2, 2), trainable=trainable)
     elif K.backend() == 'theano':
@@ -227,8 +220,6 @@ def rpn(base_layers,num_anchors):
 
 def classifier(base_layers, input_rois, num_rois, nb_classes = 21, trainable=False):
 
-    # compile times on theano tend to be very high, so we use smaller ROI pooling regions to workaround
-
     if K.backend() == 'tensorflow':
         pooling_regions = 14
         input_shape = (num_rois,14,14,1024)
@@ -242,7 +233,6 @@ def classifier(base_layers, input_rois, num_rois, nb_classes = 21, trainable=Fal
     out = TimeDistributed(Flatten())(out)
 
     out_class = TimeDistributed(Dense(nb_classes, activation='softmax', kernel_initializer='zero'), name='dense_class_{}'.format(nb_classes))(out)
-    # note: no regression target for bg class
     out_regr = TimeDistributed(Dense(4 * (nb_classes-1), activation='linear', kernel_initializer='zero'), name='dense_regress_{}'.format(nb_classes))(out)
     return [out_class, out_regr]
 
