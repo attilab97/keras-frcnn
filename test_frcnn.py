@@ -19,7 +19,7 @@ parser = OptionParser()
 parser.add_option("-p", "--path", dest="test_path", help="Path to test data.")
 parser.add_option("-n", "--num_rois", type="int", dest="num_rois",
 				help="Number of ROIs per iteration. Higher means more memory use.", default=32)
-parser.add_option("--config_filename", dest="config_filename", help=
+parser.add_option("-c","--config_filename", dest="config_filename", help=
 				"Location to read the metadata related to the training (generated when training).",
 				default="config.pickle")
 parser.add_option("--network", dest="network", help="Base network to use. Supports vgg or resnet50.", default='resnet50')
@@ -236,7 +236,7 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 			textLabel = '{}: {}'.format(key,int(100*new_probs[jk]))
 			all_dets.append((key,100*new_probs[jk]))
 
-			(retval,baseLine) = cv2.getTextSize(textLabel,cv2.FONT_HERSHEY_PLAIN,1,1)
+			(retval,baseLine) = cv2.getTextSize(textLabel,cv2.FONT_HERSHEY_SIMPLEX,1,1)
 			#pentru lara
 			#textOrg = (real_x1, real_y1-0)
 			# pentru driveu
@@ -245,10 +245,19 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 			cv2.rectangle(img, (textOrg[0] - 5, textOrg[1]+baseLine - 5), (textOrg[0]+retval[0] + 5, textOrg[1]-retval[1] - 5), (0, 0, 0), 2)
 			# asta pune fundal alb in spatele etichetei
 			cv2.rectangle(img, (textOrg[0] - 5,textOrg[1]+baseLine - 5), (textOrg[0]+retval[0] + 5, textOrg[1]-retval[1] - 5), (255, 255, 255), -1)
-			cv2.putText(img, textLabel, textOrg, cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 0), 1)
+			cv2.putText(img, textLabel, textOrg, cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 1)
 
 	print('Elapsed time = {}'.format(time.time() - st))
-	print(all_dets)
-	cv2.imshow('img', img)
+	print(all_dets)  
+	scale_percent = 30 # percent of original size
+	width = int(img.shape[1] * scale_percent / 100)
+	height = int(img.shape[0] * scale_percent / 100)
+	dim = (width, height)
+	# resize image
+	resized = cv2.resize(img, dim, interpolation = cv2.INTER_AREA)
+
+	cv2.imshow("Image", resized)
 	cv2.waitKey(0)
+	cv2.destroyAllWindows()
+  
 	# cv2.imwrite('./results_imgs/{}.png'.format(idx),img)
