@@ -11,6 +11,7 @@ from keras import backend as K
 from keras.layers import Input
 from keras.models import Model
 from keras_frcnn import roi_helpers
+import keras_frcnn.resnet as nn
 
 sys.setrecursionlimit(40000)
 
@@ -26,7 +27,7 @@ parser.add_option("--network", dest="network", help="Base network to use. Suppor
 
 (options, args) = parser.parse_args()
 
-if not options.test_path:   # if filename is not given
+if not options.test_path: 
 	parser.error('Error: path to test data must be specified. Pass --path to command line')
 
 
@@ -35,12 +36,8 @@ config_output_filename = options.config_filename
 with open(config_output_filename, 'rb') as f_in:
 	C = pickle.load(f_in)
 
-if C.network == 'resnet50':
-	import keras_frcnn.resnet as nn
-elif C.network == 'vgg':
-	import keras_frcnn.vgg as nn
 
-# turn off any data augmentation at test time
+# nu folosim augmentare
 C.use_horizontal_flips = False
 C.use_vertical_flips = False
 C.rot_90 = False
@@ -48,7 +45,7 @@ C.rot_90 = False
 img_path = options.test_path
 
 def format_img_size(img, C):
-	""" formats the image size based on config """
+	""" formateaza imaginea pe baza config-ului """
 	img_min_side = float(C.im_size)
 	(height,width,_) = img.shape
 		
@@ -64,7 +61,7 @@ def format_img_size(img, C):
 	return img, ratio	
 
 def format_img_channels(img, C):
-	""" formats the image channels based on config """
+	""" formateaza canalele imaginii pe baza config-ului """
 	img = img[:, :, (2, 1, 0)]
 	img = img.astype(np.float32)
 	img[:, :, 0] -= C.img_channel_mean[0]
@@ -76,12 +73,12 @@ def format_img_channels(img, C):
 	return img
 
 def format_img(img, C):
-	""" formats an image for model prediction based on config """
+	""" formateaza o imagine pentru a face predictii """
 	img, ratio = format_img_size(img, C)
 	img = format_img_channels(img, C)
 	return img, ratio
 
-# Method to transform the coordinates of the bounding box to its original size
+# transforma coordonatele casetelor in coordonatele reale
 def get_real_coordinates(ratio, x1, y1, x2, y2):
 
 	real_x1 = int(round(x1 // ratio))
@@ -101,10 +98,7 @@ print(class_mapping)
 class_to_color = {class_mapping[v]: np.random.randint(0, 255, 3) for v in class_mapping}
 C.num_rois = int(options.num_rois)
 
-if C.network == 'resnet50':
-	num_features = 1024
-elif C.network == 'vgg':
-	num_features = 512
+num_features = 1024
 
 if K.image_dim_ordering() == 'th':
 	input_shape_img = (3, None, None)
@@ -118,13 +112,14 @@ img_input = Input(shape=input_shape_img)
 roi_input = Input(shape=(C.num_rois, 4))
 feature_map_input = Input(shape=input_shape_features)
 
-# define the base network (resnet here, can be VGG, Inception, etc)
+# definim reteaua de baza, resnet50
 shared_layers = nn.nn_base(img_input, trainable=True)
 
-# define the RPN, built on the base layers
+# definim reteaua RPN
 num_anchors = len(C.anchor_box_scales) * len(C.anchor_box_ratios)
 rpn_layers = nn.rpn(shared_layers, num_anchors)
 
+# definim reteaua R-CNN
 classifier = nn.classifier(feature_map_input, roi_input, C.num_rois, nb_classes=len(class_mapping), trainable=True)
 
 model_rpn = Model(img_input, rpn_layers)
@@ -132,6 +127,7 @@ model_classifier_only = Model([feature_map_input, roi_input], classifier)
 
 model_classifier = Model([feature_map_input, roi_input], classifier)
 
+C.model_path = C.model_path[3:]
 print('Loading weights from {}'.format(C.model_path))
 model_rpn.load_weights(C.model_path, by_name=True)
 model_classifier.load_weights(C.model_path, by_name=True)
@@ -161,17 +157,16 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 	if K.image_dim_ordering() == 'tf':
 		X = np.transpose(X, (0, 2, 3, 1))
 
-	# get the feature maps and output from the RPN
+	# luam harta de caracteristici si output-ul de la RPN
 	[Y1, Y2, F] = model_rpn.predict(X)
 	
 
 	R = roi_helpers.rpn_to_roi(Y1, Y2, C, K.image_dim_ordering(), overlap_thresh=0.7)
 
-	# convert from (x1,y1,x2,y2) to (x,y,w,h)
+	# convertim din (x1,y1,x2,y2) in (x,y,w,h)
 	R[:, 2] -= R[:, 0]
 	R[:, 3] -= R[:, 1]
 
-	# apply the spatial pyramid pooling to the proposed regions
 	bboxes = {}
 	probs = {}
 
@@ -181,7 +176,6 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 			break
 
 		if jk == R.shape[0]//C.num_rois:
-			#pad R
 			curr_shape = ROIs.shape
 			target_shape = (curr_shape[0],C.num_rois,curr_shape[2])
 			ROIs_padded = np.zeros(target_shape).astype(ROIs.dtype)
@@ -249,7 +243,7 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 
 	print('Elapsed time = {}'.format(time.time() - st))
 	print(all_dets)  
-	scale_percent = 30 # percent of original size
+	scale_percent = 50 # percent of original size
 	width = int(img.shape[1] * scale_percent / 100)
 	height = int(img.shape[0] * scale_percent / 100)
 	dim = (width, height)
